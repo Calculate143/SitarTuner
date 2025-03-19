@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sitar Tuner Pro</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 10px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .tuner-container {
+            width: 100%;
+            margin: 0 auto;
+            padding: 15px;
+            background: #2c2c2c;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        h1 {
+            font-size: 1.5rem;
+            color: #00bcd4;
+            margin-bottom: 15px;
+        }
+        .form-select {
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            padding: 5px;
+        }
+        #frequency {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+            margin: 10px 0;
+        }
+        .note-display {
+            font-size: 1rem;
+            margin: 10px 0;
+            font-weight: 500;
+            min-height: 3em;
+            word-wrap: break-word;
+        }
+        .meter-container {
+            width: 100%;
+            height: 20px;
+            background: #3a3a3a;
+            position: relative;
+            border-radius: 5px;
+            margin: 10px 0;
+            border: 1px solid #555;
+        }
+        .meter-bar {
+            width: 10px;
+            height: 100%;
+            background: #00bcd4;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: left 0.1s ease;
+            border-radius: 5px;
+        }
+        .meter-center {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 100%;
+            background: #4caf50;
+        }
+        .meter-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: #b0b0b0;
+            margin-top: 5px;
+        }
+        .btn-primary {
+            background-color: #00bcd4;
+            border: none;
+            padding: 8px 15px;
+            font-size: 1rem;
+            transition: background-color 0.3s;
+            width: 100%;
+        }
+        .btn-primary:hover {
+            background-color: #0097a7;
+        }
+        footer {
+            padding: 10px;
+            text-align: center;
+            color: #b0b0b0;
+            font-size: 0.8rem;
+            background: #252525;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 5px;
+            }
+            .tuner-container {
+                padding: 10px;
+            }
+            h1 {
+                font-size: 1.2rem;
+            }
+            #frequency {
+                font-size: 1.5rem;
+            }
+            .note-display {
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="tuner-container">
+        <div>
+            <h1 class="text-center">Sitar Tuner Pro</h1>
+            <select id="scaleSelect" class="form-select"></select>
+            <select id="stringSelect" class="form-select"></select>
+            <div class="text-center">
+                <div id="frequency">0 Hz</div>
+                <div class="note-display" id="note">Select a scale, string, and start tuning...</div>
+                <div class="meter-container">
+                    <div class="meter-center"></div>
+                    <div class="meter-bar" id="meterBar"></div>
+                </div>
+                <div class="meter-labels">
+                    <span>Too Low</span>
+                    <span>In Tune</span>
+                    <span>Too High</span>
+                </div>
+            </div>
+        </div>
+        <button id="startBtn" class="btn btn-primary">Start Tuning</button>
+    </div>
+    <footer>
+        © 2025 Nilarka Das - dasnilarka@gmail.com
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const baseFrequencies = { 'C': 261.63 };
+        const scaleOffsets = {
+            'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+            'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+        };
+        const stringNames = [
+            'Chikari (High Sa)', 'Chikari (Pa)', '1st String (Sa)',
+            '2nd String (Pa)', '3rd String (Ma)', '4th String (Sa)'
+        ];
+        const stringIntervals = [12, 7, 0, -5, -7, -12];
+        const westernNotes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+        let sitarStrings = [];
+        let westernStringNotes = [];
+        let audioContext;
+        let analyser;
+        let microphone;
+        let targetFrequency = 0;
+        let lastValidPitch = 0;
+
+        const startBtn = document.getElementById('startBtn');
+        const frequencyDisplay = document.getElementById('frequency');
+        const noteDisplay = document.getElementById('note');
+        const stringSelect = document.getElementById('stringSelect');
+        const scaleSelect = document.getElementById('scaleSelect');
+        const meterBar = document.getElementById('meterBar');
+
+        function getWesternNote(semitonesFromC4) {
+            const totalSemitones = Math.round(semitonesFromC4);
+            const octave = 4 + Math.floor(totalSemitones / 12);
+            const noteIndex = (totalSemitones % 12 + 12) % 12;
+            return `${westernNotes[noteIndex]}${octave}`;
+        }
+
+        function populateScaleSelect() {
+            Object.keys(scaleOffsets).forEach(scale => {
+                const option = document.createElement('option');
+                option.value = scale;
+                option.textContent = scale;
+                scaleSelect.appendChild(option);
+            });
+        }
+
+        function updateStringOptions() {
+            const rootNote = scaleSelect.value;
+            const rootSemitones = scaleOffsets[rootNote];
+            sitarStrings = stringIntervals.map(interval => {
+                return baseFrequencies['C'] * Math.pow(2, (rootSemitones + interval) / 12);
+            });
+            westernStringNotes = stringIntervals.map(interval => getWesternNote(rootSemitones + interval));
+
+            stringSelect.innerHTML = '';
+            sitarStrings.forEach((freq, i) => {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `${stringNames[i]} - ${westernStringNotes[i]} (${freq.toFixed(2)} Hz)`;
+                stringSelect.appendChild(option);
+            });
+            targetFrequency = sitarStrings[0];
+            updateNoteDisplay(0);
+        }
+
+        function updateNoteDisplay(pitch) {
+            const selectedString = stringSelect.value;
+            if (pitch === 0) {
+                noteDisplay.textContent = `Tune ${stringNames[selectedString]} (${westernStringNotes[selectedString]}) to ${targetFrequency.toFixed(2)} Hz`;
+            } else {
+                updateFeedback(pitch);
+            }
+        }
+
+        scaleSelect.addEventListener('change', updateStringOptions);
+        stringSelect.addEventListener('change', () => {
+            targetFrequency = sitarStrings[stringSelect.value];
+            updateNoteDisplay(lastValidPitch);
+        });
+
+        startBtn.addEventListener('click', async () => {
+            if (!audioContext) {
+                await startTuner();
+            }
+            startBtn.disabled = true;
+            startBtn.textContent = 'Tuning...';
+        });
+
+        async function startTuner() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 4096;
+                analyser.smoothingTimeConstant = 0.8; // Smoother continuous detection
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+
+                detectPitch();
+            } catch (err) {
+                alert('Error accessing microphone: ' + err.message);
+            }
+        }
+
+        function detectPitch() {
+            const buffer = new Float32Array(analyser.fftSize);
+            analyser.getFloatTimeDomainData(buffer);
+            const pitch = autoCorrelate(buffer, audioContext.sampleRate);
+
+            if (pitch !== -1 && pitch > 20) {
+                lastValidPitch = pitch;
+                updateFeedback(pitch);
+            } else if (lastValidPitch > 0) {
+                updateFeedback(lastValidPitch);
+            }
+
+            requestAnimationFrame(detectPitch);
+        }
+
+        function updateFeedback(pitch) {
+            frequencyDisplay.textContent = `${pitch.toFixed(1)} Hz`;
+            const diff = pitch - targetFrequency;
+            const tolerance = 2;
+            const maxDiff = 20;
+
+            const meterPosition = Math.min(Math.max(diff / maxDiff, -1), 1);
+            const meterLeft = 50 + (meterPosition * 45);
+            meterBar.style.left = `${meterLeft}%`;
+
+            const selectedString = stringSelect.value;
+            if (Math.abs(diff) <= tolerance) {
+                noteDisplay.textContent = `${stringNames[selectedString]} (${westernStringNotes[selectedString]}) is in tune!`;
+                noteDisplay.style.color = '#4caf50';
+                meterBar.style.background = '#4caf50';
+            } else if (diff > 0) {
+                noteDisplay.textContent = `${stringNames[selectedString]} (${westernStringNotes[selectedString]}): Too high by ${Math.abs(diff).toFixed(1)} Hz - Tune down`;
+                noteDisplay.style.color = '#ef5350';
+                meterBar.style.background = '#ef5350';
+            } else {
+                noteDisplay.textContent = `${stringNames[selectedString]} (${westernStringNotes[selectedString]}): Too low by ${Math.abs(diff).toFixed(1)} Hz - Tune up`;
+                noteDisplay.style.color = '#00bcd4';
+                meterBar.style.background = '#00bcd4';
+            }
+        }
+
+        function autoCorrelate(buffer, sampleRate) {
+            let SIZE = buffer.length;
+            let rms = 0;
+
+            for (let i = 0; i < SIZE; i++) {
+                rms += buffer[i] * buffer[i];
+            }
+            rms = Math.sqrt(rms / SIZE);
+            if (rms < 0.002) return -1;
+
+            let r1 = 0, r2 = SIZE - 1;
+            const thres = 0.05;
+            for (let i = 0; i < SIZE / 2; i++)
+                if (Math.abs(buffer[i]) < thres) { r1 = i; break; }
+            for (let i = 1; i < SIZE / 2; i++)
+                if (Math.abs(buffer[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+
+            buffer = buffer.slice(r1, r2);
+            SIZE = buffer.length;
+
+            const c = new Array(SIZE).fill(0);
+            for (let i = 0; i < SIZE; i++)
+                for (let j = 0; j < SIZE - i; j++)
+                    c[i] = c[i] + buffer[j] * buffer[j + i];
+
+            let d = 0;
+            while (d < SIZE - 1 && c[d] > c[d + 1]) d++;
+            let maxval = -1, maxpos = -1;
+            for (let i = d; i < SIZE; i++) {
+                if (c[i] > maxval) {
+                    maxval = c[i];
+                    maxpos = i;
+                }
+            }
+            let T0 = maxpos;
+
+            return T0 > 0 ? sampleRate / T0 : -1;
+        }
+
+        // Initialize
+        populateScaleSelect();
+        scaleSelect.value = 'C#';
+        updateStringOptions();
+    </script>
+</body>
+</html>
